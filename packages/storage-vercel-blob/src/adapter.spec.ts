@@ -55,9 +55,6 @@ const generateInstructions = async ({
     baseUrl: 'https://example.com',
     cacheControlMaxAge: 60,
     clientUploads: true,
-    collectionSources: [
-      { collectionPrefix: '', collectionSlug: 'media', useCompositePrefixes: false },
-    ],
     token: 'read-write-token',
   })
   const generatedAdapter = adapter({
@@ -100,12 +97,15 @@ describe('createVercelBlobAdapter', () => {
     expect(tokenOptions).not.toHaveProperty('allowOverwrite')
   })
 
-  it('should allow an authorized owner to update the requested key', async () => {
+  it('should deduplicate instead of overwriting when a document owns the requested key', async () => {
     const instructions = await generateInstructions({ hasOwner: true })
 
-    expect(instructions).toMatchObject({ data: { pathname: 'reference.png' } })
+    // The instructions request carries no target document ID, so the server cannot tell a
+    // new-document creation apart from an intentional replacement - overwriting in place
+    // would clobber another document's bytes (#17823, #18362).
+    expect(instructions).toMatchObject({ data: { pathname: 'reference-1.png' } })
     expect(mocks.generateClientToken).toHaveBeenCalledWith(
-      expect.objectContaining({ allowOverwrite: true, pathname: 'reference.png' }),
+      expect.not.objectContaining({ allowOverwrite: true }),
     )
   })
 

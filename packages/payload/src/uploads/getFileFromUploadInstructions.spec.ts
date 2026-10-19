@@ -422,6 +422,57 @@ describe('getFileFromUploadInstructions', () => {
     expect(hasReadPastBoundary).toBe(false)
   })
 
+  it('does not hang when the stream cancellation never settles', async () => {
+    const prefix = Buffer.alloc(HEADER_PROBE_BYTE_LENGTH)
+    MINIMAL_PNG.copy(prefix)
+
+    // Models providers (e.g. Vercel Blob streamed 206 responses) whose reader.cancel()
+    // returns a promise that never settles - awaiting it would hang finalisation.
+    // The stream is left open (not closed) so cancel() is actually invoked.
+    const neverSettling = new Promise<void>(() => {})
+    let servedPrefix = false
+    const stream = new ReadableStream(
+      {
+        cancel() {
+          return neverSettling
+        },
+        pull(controller) {
+          if (!servedPrefix) {
+            servedPrefix = true
+            controller.enqueue(prefix)
+          }
+          // Leave the stream open - the reader stops after the bounded prefix.
+        },
+      },
+      { highWaterMark: 0 },
+    )
+
+    const handler = vi.fn(
+      async () =>
+        new Response(stream, {
+          headers: {
+            'Content-Length': String(HEADER_PROBE_BYTE_LENGTH * 4),
+            'Content-Type': 'image/png',
+          },
+          status: 200,
+        }),
+    )
+    const req = createReq([handler], {})
+
+    const file = await getFileFromUploadInstructions({
+      collectionSlug: 'media',
+      file: createUploadReferenceFile({
+        filename: 'header-never-settling-cancel.png',
+        mimeType: 'image/png',
+        size: HEADER_PROBE_BYTE_LENGTH * 4,
+      }),
+      req,
+    })
+
+    expect(file.tempFilePath).toBeUndefined()
+    expect(file.data.length).toBe(HEADER_PROBE_BYTE_LENGTH)
+  })
+
   it('preserves native Request accessors like signal on the request passed to a range-scoped handler', async () => {
     const abortController = new AbortController()
     const baseRequest = new Request('http://localhost/api/media', {

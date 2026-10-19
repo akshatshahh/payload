@@ -9,7 +9,6 @@ import { cloudStoragePlugin } from '@payloadcms/plugin-cloud-storage'
 
 import { createVercelBlobAdapter } from './adapter.js'
 import {
-  getCollectionSources,
   type InternalVercelBlobStorageAdapter,
   vercelBlobStorageMetadata,
 } from './getCollectionSources.js'
@@ -145,10 +144,6 @@ export const vercelBlobStorage: VercelBlobStorageFactory = (
         baseUrl,
         cacheControlMaxAge: optionsWithDefaults.cacheControlMaxAge ?? 60 * 60 * 24 * 365,
         clientUploads: optionsWithDefaults.clientUploads,
-        collectionSources: getCollectionSources({
-          currentAdapter: storageAdapter,
-          storageAdapters: incomingConfig.storage,
-        }),
         token: options.token!,
         useCompositePrefixes: options.useCompositePrefixes,
       })

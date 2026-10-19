@@ -5,17 +5,11 @@ import type {
   GeneratedAdapter,
 } from '@payloadcms/plugin-cloud-storage/types'
 
-import {
-  buildUploadStoragePathData,
-  resolveSignedURLKey,
-} from '@payloadcms/plugin-cloud-storage/utilities'
+import { resolveSignedURLKey } from '@payloadcms/plugin-cloud-storage/utilities'
 import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client'
 import { Forbidden } from 'payload'
-import { assertClientUploadAllowed, createClientUploadReceipt } from 'payload/internal'
+import { assertClientUploadAllowed } from 'payload/internal'
 
-import type { VercelBlobCollectionSource } from './authorizeFileOverwrite.js'
-
-import { authorizeClientOverwrite } from './authorizeFileOverwrite.js'
 import { copyVercelBlobFile } from './copyFile.js'
 import { deleteFile } from './deleteFile.js'
 import { generateURL } from './generateURL.js'
@@ -28,7 +22,6 @@ interface CreateVercelBlobAdapterArgs {
   baseUrl: string
   cacheControlMaxAge: number
   clientUploads?: ClientUploadsConfig
-  collectionSources: VercelBlobCollectionSource[]
   token: string
   useCompositePrefixes?: boolean
 }
@@ -39,7 +32,6 @@ export function createVercelBlobAdapter({
   baseUrl,
   cacheControlMaxAge,
   clientUploads,
-  collectionSources,
   token,
   useCompositePrefixes = false,
 }: CreateVercelBlobAdapterArgs): Adapter {
@@ -77,46 +69,20 @@ export function createVercelBlobAdapter({
 
         assertClientUploadAllowed({ collection, filename, mimeType })
 
-        const requested = buildUploadStoragePathData({
+        // Always resolve a deduplicated key. Authorising an in-place overwrite here is unsafe:
+        // the instructions request carries no target document ID, so the server cannot tell a
+        // new-document creation apart from an intentional replacement - and a colliding upload
+        // would clobber another document's bytes (see #17823, #18362). Replacements still work:
+        // the document is updated to the deduplicated path and the previous file is deleted
+        // afterwards, matching the server-upload flow.
+        const resolved = await resolveSignedURLKey({
           collectionPrefix: prefix,
+          collectionSlug,
           docPrefix,
           filename,
+          req,
           useCompositePrefixes,
         })
-        const allowOverwrite = collection.versions
-          ? false
-          : await authorizeClientOverwrite({
-              collectionPrefix: prefix,
-              collectionSources,
-              overrideAccess,
-              req,
-              requestedCollectionSlug: collectionSlug,
-              requestedFilename: requested.sanitizedFilename,
-              requestedStorageFilePath: requested.storageFilePath,
-            })
-        const resolved = allowOverwrite
-          ? {
-              ...requested,
-              uploadReference: {
-                prefix: requested.sanitizedDocPrefix,
-                signedReceipt: createClientUploadReceipt({
-                  allowOverwrite: true,
-                  collectionSlug,
-                  filename: requested.sanitizedFilename,
-                  filePrefix: requested.sanitizedDocPrefix,
-                  req,
-                  storageFilePath: requested.storageFilePath,
-                }),
-              },
-            }
-          : await resolveSignedURLKey({
-              collectionPrefix: prefix,
-              collectionSlug,
-              docPrefix,
-              filename,
-              req,
-              useCompositePrefixes,
-            })
 
         return {
           name: 'uploadToVercelBlob',
@@ -126,7 +92,6 @@ export function createVercelBlobAdapter({
             token: await generateClientTokenFromReadWriteToken({
               addRandomSuffix: false,
               allowedContentTypes: mimeType ? [mimeType] : undefined,
-              ...(allowOverwrite && { allowOverwrite: true }),
               cacheControlMaxAge,
               maximumSizeInBytes: filesize,
               pathname: resolved.storageFilePath,
@@ -156,7 +121,7 @@ export function createVercelBlobAdapter({
 
     handleDelete: deleteStoredFile,
 
-    handleUpload: async ({ data, file: { buffer, mimeType }, storageFilePath }) => {
+    handleUpload: async ({ data, file: { buffer, mimeType, tempFilePath }, storageFilePath }) => {
       const result = await uploadFile({
         access,
         addRandomSuffix,
@@ -164,6 +129,7 @@ export function createVercelBlobAdapter({
         cacheControlMaxAge,
         mimeType,
         storageFilePath,
+        tempFilePath,
         token,
       })
 

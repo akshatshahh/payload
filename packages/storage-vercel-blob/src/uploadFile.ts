@@ -1,4 +1,5 @@
 import { put } from '@vercel/blob'
+import fs from 'node:fs'
 import path from 'path'
 
 interface UploadFileArgs {
@@ -8,6 +9,8 @@ interface UploadFileArgs {
   cacheControlMaxAge?: number
   mimeType: string
   storageFilePath: string
+  /** When present, the processed file bytes live on disk - stream them instead of the (possibly empty) buffer. */
+  tempFilePath?: string
   token: string
 }
 
@@ -22,9 +25,14 @@ export async function uploadFile({
   cacheControlMaxAge,
   mimeType,
   storageFilePath,
+  tempFilePath,
   token,
 }: UploadFileArgs): Promise<UploadFileResult> {
-  const result = await put(storageFilePath, buffer, {
+  // Client uploads that went through server-side processing (e.g. WebP resizing) have their
+  // bytes written back to the temp file while `buffer` stays empty - prefer the temp file.
+  const fileBufferOrStream = tempFilePath ? fs.createReadStream(tempFilePath) : buffer
+
+  const result = await put(storageFilePath, fileBufferOrStream, {
     access,
     addRandomSuffix,
     allowOverwrite: true,

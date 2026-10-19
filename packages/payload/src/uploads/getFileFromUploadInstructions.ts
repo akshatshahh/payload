@@ -487,7 +487,10 @@ const readBoundedPrefix = async (response: Response, maxBytes: number): Promise<
       total += chunk.byteLength
     }
   } finally {
-    await reader.cancel().catch(() => {})
+    // Do not await the cancellation: some providers (e.g. Vercel Blob streamed 206
+    // responses) return a cancellation promise that never settles, which would hang
+    // finalisation after the bounded bytes were already read. Fire and forget instead.
+    reader.cancel().catch(() => {})
   }
 
   return Buffer.concat(chunks, total)

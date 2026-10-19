@@ -10,6 +10,7 @@ import { seed } from './seed.js'
 import {
   apiKeysSlug,
   BASE_PATH,
+  minLengthPasswordUsersSlug,
   namedSaveToJWTValue,
   partialDisableLocalStrategiesSlug,
   publicUsersSlug,
@@ -270,6 +271,19 @@ export default buildConfigWithDefaults({
             name: 'password',
             type: 'text',
             required: true,
+          },
+        ],
+        versions: false,
+      },
+      {
+        slug: minLengthPasswordUsersSlug,
+        auth: true,
+        fields: [
+          {
+            name: 'password',
+            type: 'text',
+            hidden: true,
+            minLength: 8,
           },
         ],
         versions: false,

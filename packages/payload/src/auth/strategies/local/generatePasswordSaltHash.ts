@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 
 import type { SanitizedCollectionConfig } from '../../../collections/config/types.js'
+import type { TextField } from '../../../fields/config/types.js'
 import type { PayloadRequest } from '../../../types/index.js'
 
 import { ValidationError } from '../../../errors/index.js'
@@ -32,6 +33,14 @@ export const generatePasswordSaltHash = async ({
   req,
 }: Args): Promise<{ hash: string; salt: string }> => {
   if (!isPasswordAuthenticated) {
+    // Use the collection's own password field config (if it has one, e.g. a
+    // documented `password` field override) so the same length rules that
+    // create/update enforce also apply here. Otherwise the default rules apply.
+    const passwordField = collection.fields?.find(
+      (field): field is TextField =>
+        field.type === 'text' && 'name' in field && field.name === 'password',
+    )
+
     const validationResult = password(passwordToSet, {
       name: 'password',
       type: 'text',
@@ -43,6 +52,12 @@ export const generatePasswordSaltHash = async ({
       req,
       required: true,
       siblingData: {},
+      ...(typeof passwordField?.minLength === 'number'
+        ? { minLength: passwordField.minLength }
+        : {}),
+      ...(typeof passwordField?.maxLength === 'number'
+        ? { maxLength: passwordField.maxLength }
+        : {}),
     })
 
     if (typeof validationResult === 'string') {

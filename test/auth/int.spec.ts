@@ -30,6 +30,7 @@ import { test } from '../__helpers/int/vitest.js'
 import { devUser } from '../credentials.js'
 import {
   apiKeysSlug,
+  minLengthPasswordUsersSlug,
   namedSaveToJWTValue,
   partialDisableLocalStrategiesSlug,
   preferencesSlug,
@@ -2537,6 +2538,87 @@ test.suite('Auth', { config: './config.ts', resetBetweenTests: false }, () => {
           overrideAccess: true,
         }),
       ).rejects.toThrow('Token is either invalid or has expired.')
+    })
+
+    test.describe('Reset password field validation', () => {
+      test('should reject reset password below the collection password minLength', async ({
+        payload,
+      }) => {
+        const email = 'min-length-reset@payloadcms.com'
+
+        await payload.create({
+          collection: minLengthPasswordUsersSlug,
+          data: {
+            email,
+            password: 'longenough1',
+          },
+          overrideAccess: true,
+        })
+
+        const token = await payload.forgotPassword({
+          collection: minLengthPasswordUsersSlug,
+          data: { email },
+          overrideAccess: true,
+        })
+
+        await expect(
+          payload.resetPassword({
+            collection: minLengthPasswordUsersSlug,
+            data: {
+              password: 'abc',
+              token,
+            },
+            overrideAccess: true,
+          }),
+        ).rejects.toMatchObject({
+          data: {
+            errors: [{ message: expect.stringContaining('minimum length of 8 characters') }],
+          },
+        })
+      })
+
+      test('should accept reset password meeting the collection password minLength', async ({
+        payload,
+      }) => {
+        const email = 'min-length-reset-ok@payloadcms.com'
+
+        await payload.create({
+          collection: minLengthPasswordUsersSlug,
+          data: {
+            email,
+            password: 'longenough1',
+          },
+          overrideAccess: true,
+        })
+
+        const token = await payload.forgotPassword({
+          collection: minLengthPasswordUsersSlug,
+          data: { email },
+          overrideAccess: true,
+        })
+
+        const reset = await payload.resetPassword({
+          collection: minLengthPasswordUsersSlug,
+          data: {
+            password: 'anotherlong1',
+            token,
+          },
+          overrideAccess: true,
+        })
+
+        expect(reset.user.email).toStrictEqual(email)
+
+        const login = await payload.login({
+          collection: minLengthPasswordUsersSlug,
+          data: {
+            email,
+            password: 'anotherlong1',
+          },
+          overrideAccess: true,
+        })
+
+        expect(login.user.email).toStrictEqual(email)
+      })
     })
 
     test.describe('Login Attempts', () => {

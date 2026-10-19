@@ -1,5 +1,7 @@
 export const slug = 'users'
 
+export const minLengthPasswordUsersSlug = 'password-min-length-users'
+
 export const preferencesSlug = 'payload-preferences'
 
 export const publicUsersSlug = 'public-users'
